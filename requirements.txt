@@ -1,2 +1,7 @@
 streamlit
 requests
+pandas
+plotly
+folium
+streamlit-folium
+python-dateutil
