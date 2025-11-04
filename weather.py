@@ -5,14 +5,46 @@ import plotly.express as px
 import folium
 from streamlit_folium import st_folium
 
-# 🌦️ Streamlit Page Setup
-st.set_page_config(page_title="Open-Meteo Interactive Weather Dashboard", page_icon="🌤️", layout="wide")
+# 🌤️ Page Setup
+st.set_page_config(page_title="Open-Meteo Weather Dashboard", page_icon="🌦️", layout="wide")
 
-st.title("🌤️ Open-Meteo Interactive Weather Dashboard")
-st.write("지도에서 위치를 클릭하면 해당 지역의 시간별 기상 데이터를 불러옵니다.")
+st.title("🌦️ Open-Meteo Interactive Weather Dashboard")
+st.write("지도에서 위치를 클릭하거나 도시 이름을 입력하여 기상 데이터를 시각화하세요.")
 
 # --------------------------------------------------
-# 1️⃣ User selects variable(s)
+# 1️⃣ User input: Choose how to get location
+# --------------------------------------------------
+st.sidebar.header("🌍 위치 선택 방법")
+location_mode = st.sidebar.radio("위치를 선택하세요:", ["지도 클릭", "도시 이름 입력"])
+
+lat, lon = None, None
+
+if location_mode == "도시 이름 입력":
+    city = st.sidebar.text_input("도시 이름 (예: Seoul, London, New York)")
+    if city:
+        with st.spinner("🔍 도시 좌표를 찾는 중..."):
+            geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1"
+            geo_response = requests.get(geo_url).json()
+            results = geo_response.get("results")
+
+            if results:
+                lat = results[0]["latitude"]
+                lon = results[0]["longitude"]
+                st.success(f"📍 {results[0]['name']} ({results[0]['country']}) - 위도 {lat:.2f}, 경도 {lon:.2f}")
+            else:
+                st.error("⚠️ 해당 도시를 찾을 수 없습니다. 다시 입력해주세요.")
+
+else:
+    st.header("1️⃣ 지도에서 클릭하여 위치를 선택하세요")
+    m = folium.Map(location=[37.57, 126.98], zoom_start=3)
+    map_data = st_folium(m, height=400)
+    if map_data and map_data["last_clicked"]:
+        lat = map_data["last_clicked"]["lat"]
+        lon = map_data["last_clicked"]["lng"]
+        st.success(f"📍 선택된 위치: 위도 {lat:.4f}, 경도 {lon:.4f}")
+
+# --------------------------------------------------
+# 2️⃣ Select weather variables
 # --------------------------------------------------
 variable_options = {
     "기온 (Temperature °C)": "temperature_2m",
@@ -28,34 +60,17 @@ selected_vars = st.multiselect(
 )
 
 # --------------------------------------------------
-# 2️⃣ Map for selecting a location
+# 3️⃣ Fetch and visualize weather data
 # --------------------------------------------------
-st.header("1️⃣ 지역 선택 (지도를 클릭하세요)")
-m = folium.Map(location=[37.57, 126.98], zoom_start=4)
-map_data = st_folium(m, height=400)
-
-# --------------------------------------------------
-# 3️⃣ When a user clicks a location
-# --------------------------------------------------
-if map_data and map_data["last_clicked"]:
-    lat = map_data["last_clicked"]["lat"]
-    lon = map_data["last_clicked"]["lng"]
-
-    st.success(f"📍 선택된 위치: 위도 {lat:.4f}, 경도 {lon:.4f}")
-
-    # Create API parameter string (e.g., hourly=temperature_2m,precipitation)
+if lat and lon:
     hourly_vars = ",".join([variable_options[var] for var in selected_vars])
-
-    # --------------------------------------------------
-    # 4️⃣ Call Open-Meteo API
-    # --------------------------------------------------
-    url = (
+    api_url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={lat}&longitude={lon}&hourly={hourly_vars}&timezone=Asia/Seoul"
     )
 
     with st.spinner("🌍 데이터를 불러오는 중..."):
-        response = requests.get(url)
+        response = requests.get(api_url)
         data = response.json()
 
     hourly_data = data.get("hourly", {})
@@ -64,10 +79,9 @@ if map_data and map_data["last_clicked"]:
     if not df.empty:
         st.header("2️⃣ 시간별 데이터 시각화")
 
-        # Melt DataFrame for easier plotting
+        # Transform DataFrame
         df_melted = df.melt(id_vars=["time"], var_name="variable", value_name="value")
 
-        # Display chart
         fig = px.line(
             df_melted,
             x="time",
@@ -77,10 +91,7 @@ if map_data and map_data["last_clicked"]:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # --------------------------------------------------
-        # 5️⃣ Show raw data
-        # --------------------------------------------------
         st.header("3️⃣ 원시 데이터 보기 (상위 24개)")
         st.dataframe(df.head(24))
     else:
-        st.warning("⚠️ 해당 지역에 대한 데이터가 없습니다.")
+        st.warning("⚠️ 데이터가 없습니다.")
