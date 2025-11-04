@@ -5,3 +5,6 @@ plotly
 folium
 streamlit-folium
 python-dateutil
+
+spotipy
+python-dotenv
